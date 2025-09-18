@@ -40,6 +40,7 @@ out <- gpTwoWay(DUREZA ~ MORTERO*EDAD, data = data, method = "gPB")
 # Bootstrapping considering only separate measurements for different test tubes
 # Loop for 100 samples of the measurement taken in each test tube
 
+library("dqrng")
 subsets <- c()
 
 for (dosage in c("000CW","025CW","050CW","075CW","100CW")){
@@ -104,9 +105,9 @@ count
 # Print the last sample
 
 ggline(data_sampled1, x = "MORTERO", y = "DUREZA", color = "EDAD", add=c("mean_se","jitter")) +
-  labs(y = "Shore D surface hardness") + labs(x = "") + 
-  scale_color_discrete(name = "Age", labels = c("28 days", "90 days", "180 days")) + 
-  scale_x_discrete(labels=c('REF', 'CW-25%', 'CW-50%', 'CW-75%', 'CW-100%'))
+  labs(y = "Shore D surface hardness") + labs(x = "Composite material") + 
+  scale_x_discrete(labels=c('REF', 'CW-25%', 'CW-50%', 'CW-75%', 'CW-100%')) +
+  scale_color_discrete(name = "Age", labels = c("28 days", "90 days", "180 days"))
 
 ####
 # Compression test analysis
