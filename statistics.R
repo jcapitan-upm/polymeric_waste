@@ -32,33 +32,82 @@ library("car")
 leveneTest(DUREZA ~ MORTERO*EDAD, data = data)
 leveneTest(log(DUREZA) ~ MORTERO*EDAD, data = data)
 
-# Bootstrap to account for heteroscedasticity
+# Bootstrap to account for heteroscedasticity and the lack of normality
 
 library(twowaytests)
-gpTwoWay(DUREZA ~ MORTERO*EDAD, data = data, method = "gPB")
+out <- gpTwoWay(DUREZA ~ MORTERO*EDAD, data = data, method = "gPB")
 
-# Pairwise comparisons: for fixed ages
+# Bootstrapping considering only separate measurements for different test tubes
+# Loop for 100 samples of the measurement taken in each test tube
 
-pairwise.t.test(data$DUREZA[which(data$EDAD=="028D")], 
-                data$MORTERO[which(data$EDAD=="028D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$EDAD=="090D")], 
-                data$MORTERO[which(data$EDAD=="090D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$EDAD=="180D")], 
-                data$MORTERO[which(data$EDAD=="180D")], p.adjust.method = "bonferroni")
+library("dqrng")
+subsets <- c()
 
-# Pairwise comparisons: for fixed dosages
+for (dosage in c("000CW","025CW","050CW","075CW","100CW")){
+  for (age in c("028D","090D","180D")){
+    
+    subsets <- rbind(subsets, data$DUREZA[which(data$MORTERO==dosage & data$EDAD==age)])
+  }
+}
 
-pairwise.t.test(data$DUREZA[which(data$MORTERO=="000CW")], 
-                data$EDAD[which(data$MORTERO=="000CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$MORTERO=="025CW")], 
-                data$EDAD[which(data$MORTERO=="025CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$MORTERO=="050CW")], 
-                data$EDAD[which(data$MORTERO=="050CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$MORTERO=="075CW")], 
-                data$EDAD[which(data$MORTERO=="075CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data$DUREZA[which(data$MORTERO=="100CW")], 
-                data$EDAD[which(data$MORTERO=="100CW")], p.adjust.method = "bonferroni")
+count <- rep(0,3)
 
+for (i in 1:100){
+  
+  print(i)
+  data_sampled <- c()
+
+  index <- 1
+  
+  for (dosage in c("000CW","025CW","050CW","075CW","100CW")){
+    for (age in c("028D","090D","180D")){
+      
+      sdval <- 0
+      
+      while (sdval == 0) { # To avoid three equal values at the same level
+        
+        s1 <- dqsample(subsets[index, 1:10], size = 1)
+        data_sampled <- rbind(data_sampled, c(dosage, age, s1))
+        s2 <- dqsample(subsets[index, 11:20], size = 1)
+        data_sampled <- rbind(data_sampled, c(dosage, age, s2))
+        s3 <- dqsample(subsets[index, 21:30], size = 1)
+        data_sampled <- rbind(data_sampled, c(dosage, age, s3))
+        L <- length(data_sampled[,3])
+        sdval <- sd(data_sampled[(L-2):L,3])
+        if (sdval > 0){
+          break
+        }
+      }
+      
+      index <- index + 1
+    }
+  }
+  
+  data_sampled1 <- as.data.frame(data_sampled)
+  names(data_sampled1) <- c("MORTERO","EDAD","DUREZA")
+  data_sampled1$MORTERO <- as.factor(data_sampled1$MORTERO)
+  data_sampled1$EDAD <- as.factor(data_sampled1$EDAD)
+  data_sampled1$DUREZA <- as.numeric(data_sampled1$DUREZA)
+  
+  out <- gpTwoWay(DUREZA ~ MORTERO*EDAD, data = data_sampled1, method = "gPB")
+  
+  # Count cases in which effects are not rejected
+  nrej <- which(out$output$P.value>0.05)
+  
+  if (length(nrej) > 0) {
+    count[nrej] <- count[nrej] + 1
+  }
+}
+
+# Number of cases (out of 100) that one of the three terms in the model is non-significant
+count
+
+# Print the last sample
+
+ggline(data_sampled1, x = "MORTERO", y = "DUREZA", color = "EDAD", add=c("mean_se","jitter")) +
+  labs(y = "Shore D surface hardness") + labs(x = "Composite material") + 
+  scale_x_discrete(labels=c('REF', 'CW-25%', 'CW-50%', 'CW-75%', 'CW-100%'))
+  scale_color_discrete(name = "Age", labels = c("28 days", "90 days", "180 days")) + 
 
 ####
 # Compression test analysis
@@ -83,7 +132,7 @@ summary(res.aov.c)
 # Test of the normality of the residuals
 
 aov_residuals.c <- residuals(object = res.aov.c)
-ks.test(unique(aov_residuals.c), pnorm, 0, sd(aov_residuals.c))
+shapiro.test(aov_residuals.c)
 
 # Test for homoscedasticity (with a logarithmic transformation)
 
@@ -96,29 +145,6 @@ data_comp_log <- data_comp
 data_comp_log$COMPRESION <- log(data_comp_log$COMPRESION)
 
 gpTwoWay(COMPRESION ~ MORTERO*EDAD, data = data_comp_log, method = "gPB")
-
-# Pairwise comparisons: for fixed ages
-
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$EDAD=="028D")], 
-                data_comp_log$MORTERO[which(data_comp_log$EDAD=="028D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$EDAD=="090D")], 
-                data_comp_log$MORTERO[which(data_comp_log$EDAD=="090D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$EDAD=="180D")], 
-                data_comp_log$MORTERO[which(data_comp_log$EDAD=="180D")], p.adjust.method = "bonferroni")
-
-# Pairwise comparisons: for fixed dosages
-
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$MORTERO=="000CW")], 
-                data_comp_log$EDAD[which(data_comp_log$MORTERO=="000CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$MORTERO=="025CW")], 
-                data_comp_log$EDAD[which(data_comp_log$MORTERO=="025CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$MORTERO=="050CW")], 
-                data_comp_log$EDAD[which(data_comp_log$MORTERO=="050CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$MORTERO=="075CW")], 
-                data_comp_log$EDAD[which(data_comp_log$MORTERO=="075CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_comp_log$COMPRESION[which(data_comp_log$MORTERO=="100CW")], 
-                data_comp_log$EDAD[which(data_comp_log$MORTERO=="100CW")], p.adjust.method = "bonferroni")
-
 
 ####
 # Flexural test analysis
@@ -143,30 +169,8 @@ summary(res.aov.f)
 # Test of the normality of the residuals
 
 aov_residuals.f <- residuals(object = res.aov.f)
-ks.test(unique(aov_residuals.f), pnorm, 0, sd(aov_residuals.f))
+shapiro.test(aov_residuals.f)
 
 # Test for homoscedasticity (with a logarithmic transformation)
 
 leveneTest(FLEXION ~ MORTERO*EDAD, data = data_flex)
-
-# Pairwise comparisons: for fixed ages
-
-pairwise.t.test(data_flex$FLEXION[which(data_flex$EDAD=="028D")], 
-                data_flex$MORTERO[which(data_flex$EDAD=="028D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$EDAD=="090D")], 
-                data_flex$MORTERO[which(data_flex$EDAD=="090D")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$EDAD=="180D")], 
-                data_flex$MORTERO[which(data_flex$EDAD=="180D")], p.adjust.method = "bonferroni")
-
-# Pairwise comparisons: for fixed dosages
-
-pairwise.t.test(data_flex$FLEXION[which(data_flex$MORTERO=="000CW")], 
-                data_flex$EDAD[which(data_flex$MORTERO=="000CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$MORTERO=="025CW")], 
-                data_flex$EDAD[which(data_flex$MORTERO=="025CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$MORTERO=="050CW")], 
-                data_flex$EDAD[which(data_flex$MORTERO=="050CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$MORTERO=="075CW")], 
-                data_flex$EDAD[which(data_flex$MORTERO=="075CW")], p.adjust.method = "bonferroni")
-pairwise.t.test(data_flex$FLEXION[which(data_flex$MORTERO=="100CW")], 
-                data_flex$EDAD[which(data_flex$MORTERO=="100CW")], p.adjust.method = "bonferroni")
